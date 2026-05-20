@@ -12,10 +12,11 @@ import {
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Colors } from '../constants/Colors';
-import { Cidade, cidadesRecomendadas, ultimasVisualizadas } from '../data/mockCidades';
+import { Cidade } from '../data/mockCidades';
 import { isFirebaseConfigured } from '../services/firebase';
 import { useResponsive } from '../utils/responsive';
 
+const todasCidadesJson = require('../data/cidades.json') as Cidade[];
 const TIPOS = ['Econômico', 'Conforto', 'Aventura'];
 const CLIMAS = ['Ensolarado', 'Frio', 'Chuvoso', 'Temperado'];
 const ENERGIAS = ['Calmo', 'Moderado', 'Intenso'];
@@ -33,23 +34,46 @@ export default function CriarRoteiroScreen() {
   const [corSelecionada, setCorSelecionada] = useState(CORES[0]);
   const [privado, setPrivado] = useState(true);
 
+  const todasCidades = useMemo(
+    () => [...todasCidadesJson].sort((a, b) => a.nome.localeCompare(b.nome)),
+    [],
+  );
+
   const cidadeMap = useMemo(() => {
     const map = new Map<string, Cidade>();
-    [...cidadesRecomendadas, ...ultimasVisualizadas].forEach((c) => {
+    todasCidades.forEach((c) => {
       map.set(c.id, c);
     });
     return map;
-  }, []);
-
-  const todasCidades = useMemo(() => {
-    return Array.from(cidadeMap.values()).sort((a, b) => a.nome.localeCompare(b.nome));
-  }, [cidadeMap]);
+  }, [todasCidades]);
 
   const cidadesFiltradas = useMemo(() => {
     const termo = filtroCidade.trim().toLowerCase();
-    if (!termo) return todasCidades;
+    if (!termo) return [];
     return todasCidades.filter((c) => c.nome.toLowerCase().includes(termo));
   }, [filtroCidade, todasCidades]);
+
+  function moveCidadeUp(index: number) {
+    setCidadesSelecionadas((prev) => {
+      if (index <= 0) return prev;
+      const next = [...prev];
+      [next[index - 1], next[index]] = [next[index], next[index - 1]];
+      return next;
+    });
+  }
+
+  function moveCidadeDown(index: number) {
+    setCidadesSelecionadas((prev) => {
+      if (index >= prev.length - 1) return prev;
+      const next = [...prev];
+      [next[index], next[index + 1]] = [next[index + 1], next[index]];
+      return next;
+    });
+  }
+
+  function removeCidade(id: string) {
+    setCidadesSelecionadas((prev) => prev.filter((x) => x !== id));
+  }
 
   const cidadesSelecionadasDetalhadas = useMemo(
     () => cidadesSelecionadas.map((id) => cidadeMap.get(id)).filter((c): c is Cidade => Boolean(c)),
@@ -155,14 +179,57 @@ export default function CriarRoteiroScreen() {
           Cidades ({cidadesSelecionadas.length} selecionada{cidadesSelecionadas.length === 1 ? '' : 's'})
         </Text>
         <View style={styles.addCidadeBox}>
+          {cidadesSelecionadasDetalhadas.length > 0 && (
+            <View style={styles.selectedCitiesBox}>
+              {cidadesSelecionadasDetalhadas.map((c, index) => (
+                <View style={styles.selectedCityRow} key={c.id}>
+                  <View style={styles.selectedCityInfo}>
+                    <MaterialIcons name="drag-handle" size={18} color={Colors.textGray} />
+                    <Text style={[styles.selectedCityText, { fontSize: r.font(14) }]}>
+                      {c.nome}, {c.estado}
+                    </Text>
+                  </View>
+                  <View style={styles.selectedCityActions}>
+                    <TouchableOpacity
+                      style={styles.actionButton}
+                      onPress={() => moveCidadeUp(index)}
+                      disabled={index === 0}
+                    >
+                      <MaterialIcons name="arrow-upward" size={18} color={index === 0 ? 'rgba(255,255,255,0.3)' : Colors.textWhite} />
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={styles.actionButton}
+                      onPress={() => moveCidadeDown(index)}
+                      disabled={index === cidadesSelecionadasDetalhadas.length - 1}
+                    >
+                      <MaterialIcons
+                        name="arrow-downward"
+                        size={18}
+                        color={index === cidadesSelecionadasDetalhadas.length - 1 ? 'rgba(255,255,255,0.3)' : Colors.textWhite}
+                      />
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={styles.actionButton}
+                      onPress={() => removeCidade(c.id)}
+                    >
+                      <MaterialIcons name="close" size={18} color={Colors.textWhite} />
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              ))}
+            </View>
+          )}
           <TextInput
             style={[styles.addCidadeInput, { fontSize: r.font(14) }]}
-            placeholder="Filtrar cidades..."
+            placeholder="Buscar cidades..."
             placeholderTextColor="rgba(255,255,255,0.5)"
             value={filtroCidade}
             onChangeText={setFiltroCidade}
             autoCapitalize="none"
           />
+          {!filtroCidade && (
+            <Text style={[styles.cidadeHint, { fontSize: r.font(12) }]}>Pesquise uma cidade para adicionar ao roteiro.</Text>
+          )}
           <View style={styles.cidadeChips}>
             {cidadesFiltradas.map((c) => {
               const selected = cidadesSelecionadas.includes(c.id);
@@ -351,6 +418,44 @@ const styles = StyleSheet.create({
   },
   cidadeChipText: { color: Colors.textWhite, fontWeight: '500' },
   cidadeChipTextActive: { color: '#FFFFFF', fontWeight: '700' },
+  cidadeHint: { color: Colors.textGray, marginBottom: 8 },
+  selectedCitiesBox: {
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.15)',
+    borderRadius: 16,
+    padding: 12,
+    marginBottom: 12,
+    backgroundColor: 'rgba(255,255,255,0.04)',
+  },
+  selectedCityRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 10,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255,255,255,0.08)',
+  },
+  selectedCityInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    flex: 1,
+  },
+  selectedCityText: { color: Colors.textWhite, fontWeight: '600' },
+  selectedCityActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  actionButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 10,
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   cidadeEmpty: { color: Colors.textGray, fontStyle: 'italic', paddingVertical: 4 },
   metricBox: {
     backgroundColor: Colors.inputBackground,

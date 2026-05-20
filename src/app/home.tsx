@@ -5,6 +5,8 @@ import { Cidade, cidadesRecomendadas, ultimasVisualizadas } from '../data/mockCi
 import { useAuth } from '../context/AuthContext';
 import { rankCitiesByPreferences, UserPreferences } from '../utils/preferences';
 
+const todasCidadesJson = require('../data/cidades.json') as Cidade[];
+
 export default function HomeScreen() {
   const { userData } = useAuth();
   const preferencias = (userData?.preferencias ?? {}) as UserPreferences;
@@ -22,8 +24,9 @@ export default function HomeScreen() {
       setResultadoBusca(null);
       return;
     }
-    const todas = [...recomendadas, ...ultimasVisualizadas];
-    setResultadoBusca(todas.filter((c) => c.nome.toLowerCase().includes(termo)));
+    setResultadoBusca(
+      todasCidadesJson.filter((c) => c.nome.toLowerCase().includes(termo)),
+    );
   }
 
   return (
