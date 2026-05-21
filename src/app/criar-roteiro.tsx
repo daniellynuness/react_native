@@ -22,6 +22,57 @@ const CLIMAS = ['Ensolarado', 'Frio', 'Chuvoso', 'Temperado'];
 const ENERGIAS = ['Calmo', 'Moderado', 'Intenso'];
 const CORES = ['#F59E0B', '#10B981', '#EF4444', '#3B82F6', '#8B5CF6', '#0891B2'];
 
+const CITY_COORDS: Record<string, { lat: number; lon: number }> = {
+  recife: { lat: -8.0476, lon: -34.877 },
+  olinda: { lat: -8.0089, lon: -34.8553 },
+  fortaleza: { lat: -3.7319, lon: -38.5267 },
+  natal: { lat: -5.7793, lon: -35.2009 },
+  'joao pessoa': { lat: -7.1195, lon: -34.845 },
+  maceio: { lat: -9.6498, lon: -35.7089 },
+  salvador: { lat: -12.9777, lon: -38.5016 },
+  bonito: { lat: -21.1261, lon: -56.4836 },
+  gramado: { lat: -29.3734, lon: -50.8762 },
+  canela: { lat: -29.3639, lon: -50.8156 },
+  curitiba: { lat: -25.4284, lon: -49.2733 },
+  florianopolis: { lat: -27.5949, lon: -48.5482 },
+  'sao paulo': { lat: -23.5558, lon: -46.6396 },
+  'rio de janeiro': { lat: -22.9068, lon: -43.1729 },
+  brasilia: { lat: -15.7939, lon: -47.8828 },
+  manaus: { lat: -3.119, lon: -60.0217 },
+  belem: { lat: -1.4558, lon: -48.5039 },
+  'ouro preto': { lat: -20.3856, lon: -43.5035 },
+};
+
+function normalizeCityName(nome: string) {
+  return nome
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim();
+}
+
+function haversineKm(a: { lat: number; lon: number }, b: { lat: number; lon: number }) {
+  const toRad = (value: number) => (value * Math.PI) / 180;
+  const earthRadiusKm = 6371;
+  const dLat = toRad(b.lat - a.lat);
+  const dLon = toRad(b.lon - a.lon);
+  const lat1 = toRad(a.lat);
+  const lat2 = toRad(b.lat);
+  const h =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  return Math.round(earthRadiusKm * 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h)));
+}
+
+function estimateDistanceKm(origem: Cidade, destino: Cidade) {
+  const coordOrigem = CITY_COORDS[normalizeCityName(origem.nome)];
+  const coordDestino = CITY_COORDS[normalizeCityName(destino.nome)];
+  if (coordOrigem && coordDestino) return haversineKm(coordOrigem, coordDestino);
+  if (origem.estado === destino.estado) return 90;
+  if (origem.regiao === destino.regiao) return 280;
+  return 950;
+}
+
 export default function CriarRoteiroScreen() {
   const router = useRouter();
   const r = useResponsive();
@@ -105,14 +156,32 @@ export default function CriarRoteiroScreen() {
     return 'Intenso';
   }, [cidadesSelecionadasDetalhadas]);
 
+  const trechosDistancia = useMemo(() => {
+    return cidadesSelecionadasDetalhadas.slice(0, -1).map((cidade, index) => {
+      const proxima = cidadesSelecionadasDetalhadas[index + 1];
+      return {
+        origem: cidade,
+        destino: proxima,
+        distanciaKm: estimateDistanceKm(cidade, proxima),
+      };
+    });
+  }, [cidadesSelecionadasDetalhadas]);
+
+  const distanciaTotalKm = useMemo(
+    () => trechosDistancia.reduce((total, trecho) => total + trecho.distanciaKm, 0),
+    [trechosDistancia],
+  );
+
   const duracaoCalculada = useMemo(() => {
     const count = cidadesSelecionadasDetalhadas.length;
     if (count === 0) return 'A definir';
     if (count === 1) return '1 dia';
+    if (count > 6 || distanciaTotalKm > 1800) return '7+ dias';
+    if (count > 3 || distanciaTotalKm > 700) return '4-7 dias';
+    if (distanciaTotalKm > 250) return '2-3 dias';
     if (count <= 3) return '2-3 dias';
-    if (count <= 6) return '4-7 dias';
     return '7+ dias';
-  }, [cidadesSelecionadasDetalhadas]);
+  }, [cidadesSelecionadasDetalhadas.length, distanciaTotalKm]);
 
   function toggleCidade(id: string) {
     setCidadesSelecionadas((prev) =>
@@ -264,7 +333,36 @@ export default function CriarRoteiroScreen() {
             <MaterialIcons name="schedule" size={18} color={Colors.textDark} />
             <Text style={[styles.metricValue, { fontSize: r.font(14), marginLeft: 8 }]}>{duracaoCalculada}</Text>
           </View>
-          <Text style={[styles.metricNote, { fontSize: r.font(12) }]}>Calculada automaticamente</Text>
+          <Text style={[styles.metricNote, { fontSize: r.font(12) }]}>
+            Calculada por quantidade de cidades e distância estimada
+          </Text>
+        </View>
+
+        {/* Distância */}
+        <Text style={[styles.label, { fontSize: r.font(15), marginTop: 16 }]}>Distância estimada:</Text>
+        <View style={styles.metricBox}>
+          <View style={styles.metricBoxRow}>
+            <MaterialIcons name="route" size={18} color={Colors.textDark} />
+            <Text style={[styles.metricValue, { fontSize: r.font(14), marginLeft: 8 }]}>
+              {cidadesSelecionadasDetalhadas.length > 1 ? `${distanciaTotalKm} km no total` : 'A definir'}
+            </Text>
+          </View>
+          {trechosDistancia.length > 0 ? (
+            <View style={styles.distanceList}>
+              {trechosDistancia.map((trecho) => (
+                <Text
+                  key={`${trecho.origem.id}-${trecho.destino.id}`}
+                  style={[styles.distanceText, { fontSize: r.font(12) }]}
+                >
+                  {trecho.origem.nome} {'->'} {trecho.destino.nome}: {trecho.distanciaKm} km
+                </Text>
+              ))}
+            </View>
+          ) : (
+            <Text style={[styles.metricNote, { fontSize: r.font(12) }]}>
+              Adicione pelo menos duas cidades para calcular os trechos.
+            </Text>
+          )}
         </View>
 
         {/* Tipo */}
@@ -481,6 +579,8 @@ const styles = StyleSheet.create({
   },
   metricValue: { color: Colors.textDark, fontWeight: '700' },
   metricNote: { color: Colors.textGray, marginTop: 4 },
+  distanceList: { marginTop: 8, gap: 4 },
+  distanceText: { color: Colors.textGray, lineHeight: 18 },
   observacoesInput: {
     backgroundColor: 'rgba(255,255,255,0.1)',
     borderRadius: 12,
