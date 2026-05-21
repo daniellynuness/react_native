@@ -1,7 +1,9 @@
 import {
   addDoc,
+  arrayRemove,
   arrayUnion,
   collection,
+  deleteDoc,
   doc,
   getDoc,
   getDocs,
@@ -19,9 +21,10 @@ export type UserRoteiro = Roteiro & {
   uid: string;
   automatico?: boolean;
   observacoes?: string;
+  descricao?: string;
   cidadeIds?: string[];
   autorNome?: string;
-  descricao?: string;
+  temas?: string[];
   createdAt?: unknown;
   updatedAt?: unknown;
 };
@@ -30,10 +33,12 @@ function cidadeLabel(cidade: Cidade) {
   return `${cidade.nome}, ${cidade.estado}`;
 }
 
-function calcularDuracao(totalCidades: number) {
+function calcularDuracao(totalCidades: number, distanciaKm: number = 0) {
   if (totalCidades <= 1) return '1 dia';
+  if (totalCidades > 6 || distanciaKm > 1800) return '7+ dias';
+  if (totalCidades > 3 || distanciaKm > 700) return '4-7 dias';
+  if (distanciaKm > 250) return '2-3 dias';
   if (totalCidades <= 3) return '2-3 dias';
-  if (totalCidades <= 6) return '4-7 dias';
   return '7+ dias';
 }
 
@@ -61,8 +66,9 @@ function roteiroFromDoc(id: string, data: Record<string, any>): UserRoteiro {
     imagemUrl: data.imagemUrl,
     automatico: data.automatico,
     observacoes: data.observacoes,
-    autorNome: data.autorNome,
     descricao: data.descricao,
+    autorNome: data.autorNome,
+    temas: Array.isArray(data.temas) ? data.temas : [],
     createdAt: data.createdAt,
     updatedAt: data.updatedAt,
   };
@@ -95,6 +101,8 @@ export async function criarRoteiroUsuario({
   clima,
   energia,
   observacoes,
+  descricao,
+  temas,
   cor,
   privado,
   automatico = false,
@@ -108,6 +116,8 @@ export async function criarRoteiroUsuario({
   clima: string;
   energia: string;
   observacoes?: string;
+  descricao?: string;
+  temas?: string[];
   cor: string;
   privado: boolean;
   automatico?: boolean;
@@ -125,10 +135,123 @@ export async function criarRoteiroUsuario({
     clima,
     energia,
     observacoes: observacoes ?? '',
+    descricao: descricao ?? '',
+    temas: temas ?? [],
     cor,
     privado,
     automatico,
     favoritado: false,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  });
+}
+
+export async function atualizarRoteiroUsuario(
+  roteiroId: string,
+  {
+    nome,
+    cidades,
+    cidadeIds,
+    duracao,
+    tipo,
+    clima,
+    energia,
+    observacoes,
+    descricao,
+    temas,
+    cor,
+    distanciaKm,
+  }: {
+    nome?: string;
+    cidades?: string[];
+    cidadeIds?: string[];
+    duracao?: string;
+    tipo?: string;
+    clima?: string;
+    energia?: string;
+    observacoes?: string;
+    descricao?: string;
+    temas?: string[];
+    cor?: string;
+    distanciaKm?: number;
+  }
+) {
+  if (!db) throw new Error('Firebase nao configurado.');
+
+  const updates: Record<string, any> = {
+    updatedAt: serverTimestamp(),
+  };
+
+  if (nome !== undefined) updates.nome = nome;
+  if (cidades !== undefined) updates.cidades = cidades;
+  if (cidadeIds !== undefined) updates.cidadeIds = cidadeIds;
+  if (duracao !== undefined) updates.duracao = duracao;
+  if (tipo !== undefined) updates.tipo = tipo;
+  if (clima !== undefined) updates.clima = clima;
+  if (energia !== undefined) updates.energia = energia;
+  if (observacoes !== undefined) updates.observacoes = observacoes;
+  if (descricao !== undefined) updates.descricao = descricao;
+  if (temas !== undefined) updates.temas = temas;
+  if (cor !== undefined) updates.cor = cor;
+  if (distanciaKm !== undefined) updates.distanciaKm = distanciaKm;
+
+  await updateDoc(doc(db, 'roteiros', roteiroId), updates);
+}
+
+export async function removerCidadeDoRoteiro(roteiroId: string, cidadeLabel: string, cidadeId: string) {
+  if (!db) throw new Error('Firebase nao configurado.');
+
+  await updateDoc(doc(db, 'roteiros', roteiroId), {
+    cidades: arrayRemove(cidadeLabel),
+    cidadeIds: arrayRemove(cidadeId),
+    updatedAt: serverTimestamp(),
+  });
+}
+
+export async function deletarRoteiroUsuario(roteiroId: string) {
+  if (!db) throw new Error('Firebase nao configurado.');
+
+  await deleteDoc(doc(db, 'roteiros', roteiroId));
+}
+
+export async function buscarRoteiroFavoritadoPorNome(uid: string, nome: string) {
+  if (!db) return null;
+
+  const snap = await getDocs(
+    query(
+      collection(db, 'roteiros'),
+      where('uid', '==', uid),
+      where('nome', '==', nome),
+      limit(1)
+    )
+  );
+
+  if (snap.empty) return null;
+
+  const docSnap = snap.docs[0];
+  return roteiroFromDoc(docSnap.id, docSnap.data());
+}
+
+export async function adicionarRoteiroRecomendadoAoUsuario(uid: string, roteiro: UserRoteiro) {
+  if (!db) throw new Error('Firebase nao configurado.');
+
+  return addDoc(collection(db, 'roteiros'), {
+    uid,
+    nome: roteiro.nome,
+    cidades: roteiro.cidades,
+    cidadeIds: roteiro.cidadeIds,
+    distanciaKm: roteiro.distanciaKm,
+    duracao: roteiro.duracao,
+    tipo: roteiro.tipo,
+    clima: 'A definir',
+    energia: 'A definir',
+    observacoes: roteiro.observacoes ?? '',
+    descricao: roteiro.descricao ?? '',
+    temas: roteiro.temas ?? [],
+    cor: roteiro.cor,
+    privado: true,
+    automatico: false,
+    favoritado: true,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   });

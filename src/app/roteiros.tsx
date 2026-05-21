@@ -17,7 +17,13 @@ import { roteirosRecomendados, Roteiro } from '../data/mockRoteiros';
 import { useAuth } from '../context/AuthContext';
 import { rankRoteirosByPreferences, UserPreferences } from '../utils/preferences';
 import { useResponsive } from '../utils/responsive';
-import { listarRoteirosUsuario, UserRoteiro } from '../services/roteiros';
+import {
+  adicionarRoteiroRecomendadoAoUsuario,
+  buscarRoteiroFavoritadoPorNome,
+  deletarRoteiroUsuario,
+  listarRoteirosUsuario,
+  UserRoteiro,
+} from '../services/roteiros';
 
 function RoteirCard({ roteiro, origem }: { roteiro: Roteiro; origem: 'usuario' | 'recomendado' }) {
   const r = useResponsive();

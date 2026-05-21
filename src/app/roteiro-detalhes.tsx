@@ -3,6 +3,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   Image,
   ScrollView,
   StyleSheet,
@@ -14,15 +15,46 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { Colors } from '../constants/Colors';
 import { roteirosRecomendados, Roteiro } from '../data/mockRoteiros';
 import { useAuth } from '../context/AuthContext';
-import { buscarRoteiroUsuario, UserRoteiro } from '../services/roteiros';
+import {
+  buscarRoteiroUsuario,
+  UserRoteiro,
+  deletarRoteiroUsuario,
+  removerCidadeDoRoteiro,
+  adicionarRoteiroRecomendadoAoUsuario,
+} from '../services/roteiros';
+import { sugerirCidades } from '../services/sugestoes';
 import { useResponsive } from '../utils/responsive';
+import { Cidade } from '../data/mockCidades';
+
+const todasCidadesJson = require('../data/cidades.json') as Cidade[];
+
+const CITY_COORDS: Record<string, { lat: number; lon: number }> = {
+  recife: { lat: -8.0476, lon: -34.877 },
+  olinda: { lat: -8.0089, lon: -34.8553 },
+  fortaleza: { lat: -3.7319, lon: -38.5267 },
+  natal: { lat: -5.7793, lon: -35.2009 },
+  'joao pessoa': { lat: -7.1195, lon: -34.845 },
+  maceio: { lat: -9.6498, lon: -35.7089 },
+  salvador: { lat: -12.9777, lon: -38.5016 },
+  bonito: { lat: -21.1261, lon: -56.4836 },
+  gramado: { lat: -29.3734, lon: -50.8762 },
+  canela: { lat: -29.3639, lon: -50.8156 },
+  curitiba: { lat: -25.4284, lon: -49.2733 },
+  florianopolis: { lat: -27.5949, lon: -48.5482 },
+  'sao paulo': { lat: -23.5558, lon: -46.6396 },
+  'rio de janeiro': { lat: -22.9068, lon: -43.1729 },
+  brasilia: { lat: -15.7939, lon: -47.8828 },
+  manaus: { lat: -3.119, lon: -60.0217 },
+  belem: { lat: -1.4558, lon: -48.5039 },
+  'ouro preto': { lat: -20.3856, lon: -43.5035 },
+};
 
 type Params = {
   id?: string;
   origem?: 'usuario' | 'recomendado';
 };
 
-function CityRow({ cidade, index }: { cidade: string; index: number }) {
+function CityRow({ cidade, index, onRemove }: { cidade: string; index: number; onRemove?: () => void }) {
   const r = useResponsive();
   return (
     <View style={styles.cityRow}>
@@ -33,7 +65,30 @@ function CityRow({ cidade, index }: { cidade: string; index: number }) {
         <Text style={[styles.cityName, { fontSize: r.font(15) }]}>{cidade}</Text>
         <Text style={[styles.cityMeta, { fontSize: r.font(12) }]}>Parada do roteiro</Text>
       </View>
-      <MaterialIcons name="place" size={20} color={Colors.primary} />
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+        <MaterialIcons name="place" size={20} color={Colors.primary} />
+        {onRemove && (
+          <TouchableOpacity onPress={onRemove} style={styles.removeBtn}>
+            <MaterialIcons name="close" size={18} color={Colors.textGray} />
+          </TouchableOpacity>
+        )}
+      </View>
+    </View>
+  );
+}
+
+function SuggestionCard({ cidade }: { cidade: Cidade }) {
+  const r = useResponsive();
+  return (
+    <View style={styles.suggestionCard}>
+      <View style={styles.suggestionIcon}>
+        <MaterialIcons name="near-me" size={16} color={Colors.primary} />
+      </View>
+      <View style={styles.suggestionInfo}>
+        <Text style={[styles.suggestionName, { fontSize: r.font(13) }]}>{cidade.nome}</Text>
+        <Text style={[styles.suggestionMeta, { fontSize: r.font(11) }]}>{cidade.categoria}</Text>
+      </View>
+      <MaterialIcons name="arrow-forward" size={16} color={Colors.textGray} />
     </View>
   );
 }
@@ -46,6 +101,20 @@ export default function RoteiroDetalhesScreen() {
   const { user } = useAuth();
   const [roteiroUsuario, setRoteiroUsuario] = useState<UserRoteiro | null>(null);
   const [loading, setLoading] = useState(params.origem === 'usuario');
+  const [salvando, setSalvando] = useState(false);
+
+  const todasCidades = useMemo(
+    () => [...todasCidadesJson].sort((a, b) => a.nome.localeCompare(b.nome)),
+    []
+  );
+
+  const cidadeMap = useMemo(() => {
+    const map = new Map<string, Cidade>();
+    todasCidades.forEach((c) => {
+      map.set(c.id, c);
+    });
+    return map;
+  }, [todasCidades]);
 
   useEffect(() => {
     let active = true;
@@ -77,6 +146,96 @@ export default function RoteiroDetalhesScreen() {
     if (params.origem === 'usuario') return roteiroUsuario ?? undefined;
     return roteirosRecomendados.find((item) => item.id === params.id);
   }, [params.id, params.origem, roteiroUsuario]);
+
+  const roteiroDetalhadoCidades = useMemo(() => {
+    if (!roteiro || !('cidadeIds' in roteiro)) return [];
+    return (roteiro.cidadeIds ?? [])
+      .map((id) => cidadeMap.get(id))
+      .filter((c): c is Cidade => Boolean(c));
+  }, [roteiro, cidadeMap]);
+
+  const sugestoesDeProximas = useMemo(() => {
+    if (!roteiro || roteiroDetalhadoCidades.length === 0) return [];
+    const ultimaCidade = roteiroDetalhadoCidades[roteiroDetalhadoCidades.length - 1];
+    return sugerirCidades(
+      ultimaCidade,
+      roteiroDetalhadoCidades,
+      todasCidades,
+      roteiro.cidadeIds ?? [],
+      CITY_COORDS,
+      3
+    );
+  }, [roteiro, roteiroDetalhadoCidades, todasCidades]);
+
+  async function handleRemoverCidade(index: number) {
+    if (!roteiro || !('cidadeIds' in roteiro) || params.origem !== 'usuario' || !roteiroUsuario) return;
+
+    const cidadeId = roteiroUsuario.cidadeIds?.[index];
+    const cidadeLabel = roteiroUsuario.cidades?.[index];
+
+    if (!cidadeId || !cidadeLabel) return;
+
+    Alert.alert(
+      'Remover Cidade',
+      `Tem certeza que deseja remover ${cidadeLabel}?`,
+      [
+        { text: 'Cancelar', onPress: () => {} },
+        {
+          text: 'Remover',
+          onPress: async () => {
+            try {
+              await removerCidadeDoRoteiro(roteiroUsuario.id, cidadeLabel, cidadeId);
+              const atualizado = await buscarRoteiroUsuario(user!.uid, roteiroUsuario.id);
+              setRoteiroUsuario(atualizado);
+            } catch (error) {
+              console.error('[remover-cidade]', error);
+              Alert.alert('Erro', 'Não foi possível remover a cidade.');
+            }
+          },
+        },
+      ]
+    );
+  }
+
+  async function handleDeletarRoteiro() {
+    if (!roteiroUsuario || params.origem !== 'usuario') return;
+
+    Alert.alert(
+      'Deletar Roteiro',
+      `Tem certeza que deseja deletar "${roteiroUsuario.nome}"? Esta ação não pode ser desfeita.`,
+      [
+        { text: 'Cancelar', onPress: () => {} },
+        {
+          text: 'Deletar',
+          onPress: async () => {
+            try {
+              await deletarRoteiroUsuario(roteiroUsuario.id);
+              router.replace('/roteiros');
+            } catch (error) {
+              console.error('[deletar-roteiro]', error);
+              Alert.alert('Erro', 'Não foi possível deletar o roteiro.');
+            }
+          },
+        },
+      ]
+    );
+  }
+
+  async function handleSalvarRecomendado() {
+    if (!roteiro || params.origem !== 'recomendado' || !user) return;
+
+    setSalvando(true);
+    try {
+      await adicionarRoteiroRecomendadoAoUsuario(user.uid, roteiro as UserRoteiro);
+      Alert.alert('Sucesso', 'Roteiro salvo na sua coleção!');
+      router.replace('/roteiros');
+    } catch (error) {
+      console.error('[salvar-recomendado]', error);
+      Alert.alert('Erro', 'Não foi possível salvar o roteiro.');
+    } finally {
+      setSalvando(false);
+    }
+  }
 
   if (loading) {
     return (
@@ -111,6 +270,8 @@ export default function RoteiroDetalhesScreen() {
         ? 'Roteiro salvo na sua conta. As cidades adicionadas aparecem abaixo.'
         : 'Roteiro recomendado pela comunidade.');
 
+  const isRoteiroProprio = params.origem === 'usuario';
+
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       <View style={[styles.header, { paddingTop: r.scaleY(8) }]}>
@@ -118,6 +279,18 @@ export default function RoteiroDetalhesScreen() {
           <MaterialIcons name="arrow-back" size={24} color={Colors.textWhite} />
         </TouchableOpacity>
         <Text style={[styles.headerTitle, { fontSize: r.font(18) }]}>Detalhes do Roteiro</Text>
+        <View style={{ marginLeft: 'auto', flexDirection: 'row', gap: 8 }}>
+          {isRoteiroProprio && (
+            <>
+              <TouchableOpacity onPress={() => router.push(`/editar-roteiro?id=${params.id}`)}>
+                <MaterialIcons name="edit" size={24} color={Colors.textWhite} />
+              </TouchableOpacity>
+              <TouchableOpacity onPress={handleDeletarRoteiro}>
+                <MaterialIcons name="delete" size={24} color="#EF4444" />
+              </TouchableOpacity>
+            </>
+          )}
+        </View>
       </View>
 
       <ScrollView
@@ -158,11 +331,48 @@ export default function RoteiroDetalhesScreen() {
         </View>
 
         {roteiro.cidades.length > 0 ? (
-          roteiro.cidades.map((cidade, index) => <CityRow key={`${cidade}-${index}`} cidade={cidade} index={index} />)
+          roteiro.cidades.map((cidade, index) => (
+            <CityRow
+              key={`${cidade}-${index}`}
+              cidade={cidade}
+              index={index}
+              onRemove={isRoteiroProprio ? () => handleRemoverCidade(index) : undefined}
+            />
+          ))
         ) : (
           <Text style={[styles.emptyText, { fontSize: r.font(14) }]}>Nenhuma cidade adicionada ainda.</Text>
         )}
+
+        {/* Sugestões de cidades próximas */}
+        {isRoteiroProprio && sugestoesDeProximas.length > 0 && (
+          <>
+            <View style={[styles.sectionHeader, { marginTop: 24 }]}>
+              <Text style={[styles.sectionTitle, { fontSize: r.font(18) }]}>Sugestões Próximas</Text>
+            </View>
+            <Text style={[styles.sectionSubtitle, { fontSize: r.font(12) }]}>
+              Cidades próximas à sua última parada
+            </Text>
+            {sugestoesDeProximas.map((cidade) => (
+              <SuggestionCard key={cidade.id} cidade={cidade} />
+            ))}
+          </>
+        )}
       </ScrollView>
+
+      {/* Footer Button */}
+      {params.origem === 'recomendado' && (
+        <View style={[styles.footer, { paddingBottom: insets.bottom + 12 }]}>
+          <TouchableOpacity
+            style={[styles.salvarBtn, salvando && { opacity: 0.6 }]}
+            onPress={handleSalvarRecomendado}
+            disabled={salvando}
+          >
+            <Text style={[styles.salvarText, { fontSize: r.font(15) }]}>
+              {salvando ? 'Salvando...' : 'Salvar Roteiro'}
+            </Text>
+          </TouchableOpacity>
+        </View>
+      )}
     </SafeAreaView>
   );
 }
@@ -207,6 +417,7 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   sectionTitle: { color: Colors.textWhite, fontWeight: '800' },
+  sectionSubtitle: { color: Colors.textGray, marginBottom: 12 },
   cityCount: { color: Colors.textGray },
   cityRow: {
     flexDirection: 'row',
@@ -229,7 +440,52 @@ const styles = StyleSheet.create({
   cityInfo: { flex: 1 },
   cityName: { color: Colors.textDark, fontWeight: '800' },
   cityMeta: { color: Colors.textGray, marginTop: 2 },
+  removeBtn: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   emptyText: { color: Colors.textGray },
   emptyState: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12 },
   emptyTitle: { color: Colors.textWhite, fontWeight: '800' },
+  suggestionCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.inputBackground,
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 10,
+    gap: 10,
+  },
+  suggestionIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(139, 92, 246, 0.2)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  suggestionInfo: { flex: 1 },
+  suggestionName: { color: Colors.textDark, fontWeight: '700' },
+  suggestionMeta: { color: Colors.textGray, marginTop: 2 },
+  footer: {
+    flexDirection: 'row',
+    gap: 12,
+    paddingHorizontal: 20,
+    paddingTop: 12,
+    backgroundColor: Colors.background,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255,255,255,0.1)',
+  },
+  salvarBtn: {
+    flex: 1,
+    backgroundColor: Colors.primary,
+    borderRadius: 30,
+    paddingVertical: 14,
+    alignItems: 'center',
+  },
+  salvarText: { color: Colors.textWhite, fontWeight: '700' },
 });
