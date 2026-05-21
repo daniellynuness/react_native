@@ -214,24 +214,6 @@ export async function deletarRoteiroUsuario(roteiroId: string) {
   await deleteDoc(doc(db, 'roteiros', roteiroId));
 }
 
-export async function buscarRoteiroFavoritadoPorNome(uid: string, nome: string) {
-  if (!db) return null;
-
-  const snap = await getDocs(
-    query(
-      collection(db, 'roteiros'),
-      where('uid', '==', uid),
-      where('nome', '==', nome),
-      limit(1)
-    )
-  );
-
-  if (snap.empty) return null;
-
-  const docSnap = snap.docs[0];
-  return roteiroFromDoc(docSnap.id, docSnap.data());
-}
-
 export async function adicionarRoteiroRecomendadoAoUsuario(uid: string, roteiro: UserRoteiro) {
   if (!db) throw new Error('Firebase nao configurado.');
 
@@ -251,7 +233,7 @@ export async function adicionarRoteiroRecomendadoAoUsuario(uid: string, roteiro:
     cor: roteiro.cor,
     privado: true,
     automatico: false,
-    favoritado: true,
+    favoritado: false,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   });
