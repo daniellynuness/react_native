@@ -30,6 +30,12 @@
           "root": "./src/app"
         }
       ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Permita escolher uma foto para exibir no seu perfil."
+        }
+      ],
       "expo-asset"
     ],
     "experiments": {

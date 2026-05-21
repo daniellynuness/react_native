@@ -2,9 +2,10 @@ import { useRouter } from 'expo-router';
 import { useState } from 'react';
 import { Pressable, Alert, ActivityIndicator } from 'react-native';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
-import { createUserWithEmailAndPassword, signOut } from 'firebase/auth';
+import { createUserWithEmailAndPassword, signOut, updateProfile } from 'firebase/auth';
 import { doc, setDoc } from 'firebase/firestore';
 import { auth, db, isFirebaseConfigured } from '../services/firebase';
+import { garantirPerfilUsuario } from '../services/usuarios';
 import AuthLinkAction from '../components/auth/components/AuthLinkAction';
 import AuthScreenLayout from '../components/auth/components/AuthScreenLayout';
 import FormField from '../components/auth/components/FormField';
@@ -92,14 +93,21 @@ export default function CadastroScreen() {
       const userCredential = await createUserWithEmailAndPassword(auth, emailTrim, senha);
       const user = userCredential.user;
       contaCriada = true;
+      await updateProfile(user, { displayName: nomeTrim });
 
       await setDoc(doc(db, 'usuarios', user.uid), {
         nome: nomeTrim,
         email: emailTrim,
+        telefone: '',
+        dataNascimento: '',
+        avatarUrl: '',
         createdAt: new Date().toISOString(),
         preferenciasConcluidas: false,
         preferencias: {},
+        requisitos: [],
+        roteirosSalvos: [],
       });
+      await garantirPerfilUsuario(user, { nome: nomeTrim, email: emailTrim });
 
       // createUserWithEmailAndPassword loga automaticamente; saimos para forcar
       // login manual e cair no onboarding de preferencias.

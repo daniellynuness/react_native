@@ -1,6 +1,7 @@
 import { MaterialIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import {
+  Image,
   ScrollView,
   StyleSheet,
   Text,
@@ -76,7 +77,11 @@ export default function PerfilMenuScreen() {
         {/* Avatar + Name */}
         <View style={styles.topRow}>
           <View style={styles.avatar}>
-            <MaterialIcons name="person" size={r.scaleX(48)} color={Colors.textWhite} />
+            {userData?.avatarUrl ? (
+              <Image source={{ uri: userData.avatarUrl }} style={styles.avatarImage} />
+            ) : (
+              <MaterialIcons name="person" size={r.scaleX(48)} color={Colors.textWhite} />
+            )}
           </View>
         </View>
         <Text style={[styles.name, { fontSize: r.font(22) }]}>{userData?.nome || 'Usuário'}</Text>
@@ -84,7 +89,7 @@ export default function PerfilMenuScreen() {
         <View style={styles.divider} />
 
         <MenuItem icon="person-outline" label="Meu Perfil" onPress={() => router.push('/perfil/meu-perfil')} />
-        <MenuItem icon="bookmark-border" label="Roteiros Favoritos" onPress={() => router.push('/perfil/roteiros-favoritos')} />
+        <MenuItem icon="bookmark-border" label="Roteiros Salvos" onPress={() => router.push('/perfil/roteiros-favoritos')} />
         <MenuItem icon="star-border" label="Minhas Avaliações" onPress={() => router.push('/perfil/avaliacoes')} />
         <MenuItem icon="auto-awesome" label="Preferências" onPress={() => router.push('/perfil/preferencias')} />
         <MenuItem icon="logout" label="Sair da conta" onPress={handleLogout} />
@@ -115,7 +120,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     borderWidth: 2,
     borderColor: Colors.primary,
+    overflow: 'hidden',
   },
+  avatarImage: { width: '100%', height: '100%' },
   name: {
     color: Colors.textWhite,
     fontWeight: '700',

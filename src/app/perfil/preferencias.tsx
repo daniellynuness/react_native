@@ -3,15 +3,19 @@ import { useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import { Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { doc, updateDoc } from 'firebase/firestore';
 import { Colors } from '../../constants/Colors';
 import { useResponsive } from '../../utils/responsive';
 import { useAuth } from '../../context/AuthContext';
 import { auth, db, isFirebaseConfigured } from '../../services/firebase';
+import { salvarPerfilUsuario } from '../../services/usuarios';
 
 const CLIMA_OPTIONS = ['Quente', 'Temperado', 'Frio', 'Qualquer'];
 const DURACAO_OPTIONS = ['1 dia', '2-3 dias', '4-7 dias', '7+ dias'];
 const ESTILO_OPTIONS = ['Aventura', 'Cultural', 'Gastronomia', 'Relaxamento', 'Ecoturismo'];
+
+function montarRequisitos(preferencias: { clima: string[]; duracao: string[]; estilo: string[] }) {
+  return [...preferencias.estilo, ...preferencias.duracao, ...preferencias.clima].slice(0, 6);
+}
 
 type ChipGroupProps = {
   title: string;
@@ -79,6 +83,7 @@ export default function PreferenciasScreen() {
     }
 
     const preferencias = { clima, duracao, estilo };
+    const requisitos = montarRequisitos(preferencias);
 
     // DEV_FALLBACK: remove after Firebase integration is complete.
     // Modo desenvolvimento: sem Firebase, simula a gravacao e segue para /home.
@@ -92,9 +97,10 @@ export default function PreferenciasScreen() {
 
     setSalvando(true);
     try {
-      await updateDoc(doc(db, 'usuarios', user.uid), {
+      await salvarPerfilUsuario(user.uid, {
         preferenciasConcluidas: true,
         preferencias,
+        requisitos,
       });
       await refreshUserData();
       router.replace('/home');

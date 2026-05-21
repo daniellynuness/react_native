@@ -3,8 +3,9 @@ import { useEffect, useRef, useState } from 'react';
 import { Animated, Pressable, ActivityIndicator, Alert } from 'react-native';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { signInWithEmailAndPassword } from 'firebase/auth';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { doc, getDoc } from 'firebase/firestore';
 import { auth, db, isFirebaseConfigured } from '../services/firebase';
+import { garantirPerfilUsuario } from '../services/usuarios';
 import AuthLinkAction from '../components/auth/components/AuthLinkAction';
 import AuthScreenLayout from '../components/auth/components/AuthScreenLayout';
 import FormField from '../components/auth/components/FormField';
@@ -95,15 +96,8 @@ export default function LoginScreen() {
       if (snap.exists()) {
         const data = snap.data() as { preferenciasConcluidas?: boolean };
         preferenciasConcluidas = data.preferenciasConcluidas === true;
-      } else {
-        await setDoc(userRef, {
-          nome: user.displayName || '',
-          email: user.email || emailTrim,
-          createdAt: new Date().toISOString(),
-          preferenciasConcluidas: false,
-          preferencias: {},
-        });
       }
+      await garantirPerfilUsuario(user, { email: user.email || emailTrim });
 
       if (preferenciasConcluidas) {
         router.replace('/home');

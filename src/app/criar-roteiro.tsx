@@ -13,7 +13,9 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Colors } from '../constants/Colors';
 import { Cidade } from '../data/mockCidades';
-import { isFirebaseConfigured } from '../services/firebase';
+import { auth, db, isFirebaseConfigured } from '../services/firebase';
+import { useAuth } from '../context/AuthContext';
+import { criarRoteiroUsuario } from '../services/roteiros';
 import { useResponsive } from '../utils/responsive';
 
 const todasCidadesJson = require('../data/cidades.json') as Cidade[];
@@ -77,6 +79,7 @@ export default function CriarRoteiroScreen() {
   const router = useRouter();
   const r = useResponsive();
   const insets = useSafeAreaInsets();
+  const { user } = useAuth();
 
   const [nome, setNome] = useState('');
   const [cidadesSelecionadas, setCidadesSelecionadas] = useState<string[]>([]);
@@ -84,6 +87,7 @@ export default function CriarRoteiroScreen() {
   const [observacoes, setObservacoes] = useState('');
   const [corSelecionada, setCorSelecionada] = useState(CORES[0]);
   const [privado, setPrivado] = useState(true);
+  const [salvando, setSalvando] = useState(false);
 
   const todasCidades = useMemo(
     () => [...todasCidadesJson].sort((a, b) => a.nome.localeCompare(b.nome)),
@@ -189,7 +193,7 @@ export default function CriarRoteiroScreen() {
     );
   }
 
-  function handleSalvar() {
+  async function handleSalvar() {
     const nomeTrim = nome.trim();
     if (!nomeTrim) {
       Alert.alert('Atenção', 'Informe o nome do roteiro.');
@@ -200,26 +204,40 @@ export default function CriarRoteiroScreen() {
       return;
     }
 
-    // TODO Firebase: salvar em collection(db, 'roteiros') com
-    // { uid, nome: nomeTrim, duracao: duracaoCalculada, cidades: cidadesSelecionadas, observacoes,
-    //   tipo: tipoCalculado, clima: climaCalculado, energia: energiaCalculada,
-    //   cor: corSelecionada, privado, createdAt: serverTimestamp() }
-
-    // DEV_FALLBACK: remove after Firebase integration is complete.
-    // Sem Firebase, apenas avisamos e voltamos para a lista de roteiros.
-    if (!isFirebaseConfigured) {
-      Alert.alert('Modo desenvolvimento', 'Roteiro criado de forma simulada.');
-    } else {
-      Alert.alert('Modo desenvolvimento', 'Roteiro criado de forma simulada.');
+    if (!isFirebaseConfigured || !auth || !db || !user) {
+      Alert.alert('Firebase necessário', 'Faça login com Firebase configurado para salvar roteiros.');
+      return;
     }
-    router.replace('/roteiros');
+
+    setSalvando(true);
+    try {
+      await criarRoteiroUsuario({
+        uid: user.uid,
+        nome: nomeTrim,
+        cidades: cidadesSelecionadasDetalhadas.map((c) => `${c.nome}, ${c.estado}`),
+        cidadeIds: cidadesSelecionadas,
+        duracao: duracaoCalculada,
+        tipo: tipoCalculado,
+        clima: climaCalculado,
+        energia: energiaCalculada,
+        observacoes: observacoes.trim(),
+        cor: corSelecionada,
+        privado,
+      });
+      router.replace('/roteiros');
+    } catch (error) {
+      console.error('[criar-roteiro]', error);
+      Alert.alert('Erro', 'Não foi possível salvar o roteiro. Tente novamente.');
+    } finally {
+      setSalvando(false);
+    }
   }
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       {/* Header */}
       <View style={[styles.header, { paddingTop: r.scaleY(8) }]}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
+        <TouchableOpacity onPress={() => router.replace('/roteiros')} style={styles.backBtn}>
           <MaterialIcons name="arrow-back" size={24} color={Colors.textWhite} />
         </TouchableOpacity>
         <Text style={[styles.headerTitle, { fontSize: r.font(18) }]}>CRIAR ROTEIRO</Text>
@@ -445,11 +463,13 @@ export default function CriarRoteiroScreen() {
 
       {/* Footer buttons */}
       <View style={[styles.footer, { paddingBottom: insets.bottom + 12 }]}>
-        <TouchableOpacity style={styles.descartarBtn} onPress={() => router.back()}>
+        <TouchableOpacity style={styles.descartarBtn} onPress={() => router.replace('/roteiros')}>
           <Text style={[styles.descartarText, { fontSize: r.font(15) }]}>Descartar</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={styles.salvarBtn} onPress={handleSalvar}>
-          <Text style={[styles.salvarText, { fontSize: r.font(15) }]}>Salvar Roteiro</Text>
+        <TouchableOpacity style={[styles.salvarBtn, salvando && { opacity: 0.6 }]} onPress={handleSalvar} disabled={salvando}>
+          <Text style={[styles.salvarText, { fontSize: r.font(15) }]}>
+            {salvando ? 'Salvando...' : 'Salvar Roteiro'}
+          </Text>
         </TouchableOpacity>
       </View>
     </SafeAreaView>

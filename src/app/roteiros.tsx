@@ -1,5 +1,6 @@
 import { MaterialIcons } from '@expo/vector-icons';
-import React, { useMemo, useState } from 'react';
+import { useRouter } from 'expo-router';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   Image,
   ScrollView,
@@ -16,13 +17,19 @@ import { roteirosRecomendados, Roteiro } from '../data/mockRoteiros';
 import { useAuth } from '../context/AuthContext';
 import { rankRoteirosByPreferences, UserPreferences } from '../utils/preferences';
 import { useResponsive } from '../utils/responsive';
+import { listarRoteirosUsuario, UserRoteiro } from '../services/roteiros';
 
-function RoteirCard({ roteiro }: { roteiro: Roteiro }) {
+function RoteirCard({ roteiro, origem }: { roteiro: Roteiro; origem: 'usuario' | 'recomendado' }) {
   const r = useResponsive();
+  const router = useRouter();
   const [favoritado, setFavoritado] = useState(roteiro.favoritado);
 
   return (
-    <View style={styles.roteiroCard}>
+    <TouchableOpacity
+      style={styles.roteiroCard}
+      activeOpacity={0.86}
+      onPress={() => router.push({ pathname: '/roteiro-detalhes', params: { id: roteiro.id, origem } })}
+    >
       {roteiro.imagemUrl && (
         <Image source={{ uri: roteiro.imagemUrl }} style={styles.roteiroImg} />
       )}
@@ -39,30 +46,70 @@ function RoteirCard({ roteiro }: { roteiro: Roteiro }) {
           </View>
         </View>
       </View>
-      <TouchableOpacity onPress={() => setFavoritado((v) => !v)} style={styles.bookmarkBtn}>
+      <TouchableOpacity
+        onPress={(event) => {
+          event.stopPropagation();
+          setFavoritado((v) => !v);
+        }}
+        style={styles.bookmarkBtn}
+      >
         <MaterialIcons
           name={favoritado ? 'bookmark' : 'bookmark-border'}
           size={24}
           color={favoritado ? Colors.primary : Colors.textGray}
         />
       </TouchableOpacity>
-    </View>
+    </TouchableOpacity>
   );
 }
 
 export default function RoteirosScreen() {
-  const { userData } = useAuth();
+  const { user, userData } = useAuth();
   const preferencias = (userData?.preferencias ?? {}) as UserPreferences;
   const r = useResponsive();
   const insets = useSafeAreaInsets();
   const [busca, setBusca] = useState('');
+  const [meusRoteiros, setMeusRoteiros] = useState<UserRoteiro[]>([]);
+  const [carregandoMeusRoteiros, setCarregandoMeusRoteiros] = useState(false);
+
+  useEffect(() => {
+    let ativo = true;
+
+    async function carregar() {
+      if (!user) {
+        setMeusRoteiros([]);
+        return;
+      }
+
+      setCarregandoMeusRoteiros(true);
+      try {
+        const roteiros = await listarRoteirosUsuario(user.uid);
+        if (ativo) setMeusRoteiros(roteiros);
+      } catch (error) {
+        console.error('[roteiros]', error);
+      } finally {
+        if (ativo) setCarregandoMeusRoteiros(false);
+      }
+    }
+
+    carregar();
+    return () => {
+      ativo = false;
+    };
+  }, [user]);
 
   const recomendados = useMemo(
     () => rankRoteirosByPreferences(roteirosRecomendados, preferencias),
     [userData?.preferencias],
   );
 
-  const filtrados = busca.trim()
+  const filtradosMeus = busca.trim()
+    ? meusRoteiros.filter((rt) =>
+        rt.nome.toLowerCase().includes(busca.toLowerCase())
+      )
+    : meusRoteiros;
+
+  const filtradosRecomendados = busca.trim()
     ? recomendados.filter((rt) =>
         rt.nome.toLowerCase().includes(busca.toLowerCase())
       )
@@ -96,9 +143,18 @@ export default function RoteirosScreen() {
           contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + r.scaleY(96) }]}
           showsVerticalScrollIndicator={false}
         >
-          <Text style={[styles.sectionTitle, { fontSize: r.font(18) }]}>Roteiros Recomendados</Text>
-          {filtrados.map((rt) => (
-            <RoteirCard key={rt.id} roteiro={rt} />
+          <Text style={[styles.sectionTitle, { fontSize: r.font(18) }]}>Meus Roteiros</Text>
+          {carregandoMeusRoteiros ? (
+            <Text style={[styles.emptyText, { fontSize: r.font(14) }]}>Carregando roteiros...</Text>
+          ) : filtradosMeus.length > 0 ? (
+            filtradosMeus.map((rt) => <RoteirCard key={rt.id} roteiro={rt} origem="usuario" />)
+          ) : (
+            <Text style={[styles.emptyText, { fontSize: r.font(14) }]}>Nenhum roteiro salvo ainda.</Text>
+          )}
+
+          <Text style={[styles.sectionTitle, { fontSize: r.font(18), marginTop: 20 }]}>Roteiros Recomendados</Text>
+          {filtradosRecomendados.map((rt) => (
+            <RoteirCard key={rt.id} roteiro={rt} origem="recomendado" />
           ))}
         </ScrollView>
       </SafeAreaView>
@@ -125,6 +181,7 @@ const styles = StyleSheet.create({
   searchInput: { flex: 1, color: Colors.primary },
   content: { paddingHorizontal: 20, paddingTop: 4 },
   sectionTitle: { color: Colors.textWhite, fontWeight: '700', marginBottom: 16 },
+  emptyText: { color: Colors.textGray, marginBottom: 8 },
   roteiroCard: {
     backgroundColor: Colors.inputBackground,
     borderRadius: 16,

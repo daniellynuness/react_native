@@ -2,15 +2,18 @@ import React, { createContext, useContext, useEffect, useState } from 'react';
 import { onAuthStateChanged, User } from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
 import { auth, db } from '../services/firebase';
+import { garantirPerfilUsuario } from '../services/usuarios';
 
 interface UserData {
   nome: string;
   email: string;
   telefone?: string;
   dataNascimento?: string;
+  avatarUrl?: string;
   preferenciasConcluidas?: boolean;
   preferencias?: Record<string, unknown>;
   requisitos?: string[];
+  roteirosSalvos?: string[];
 }
 
 interface AuthContextData {
@@ -27,14 +30,35 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [userData, setUserData] = useState<UserData | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const fetchUserData = async (uid: string) => {
-    if (!db) return;
+  const fetchUserData = async (uid: string, authUser: User | null = user) => {
+    if (!db) {
+      setUserData(null);
+      return;
+    }
 
     try {
       const docRef = doc(db, 'usuarios', uid);
       const docSnap = await getDoc(docRef);
       if (docSnap.exists()) {
-        setUserData(docSnap.data() as UserData);
+        const data = docSnap.data() as UserData;
+        setUserData({
+          ...data,
+          nome: data.nome || authUser?.displayName || 'Usuário',
+          email: data.email || authUser?.email || '',
+        });
+      } else if (authUser) {
+        await garantirPerfilUsuario(authUser);
+        const novoSnap = await getDoc(docRef);
+        const data = novoSnap.data() as UserData | undefined;
+        setUserData({
+          ...data,
+          nome: authUser.displayName || 'Usuário',
+          email: authUser.email || '',
+          preferenciasConcluidas: data?.preferenciasConcluidas ?? false,
+          preferencias: data?.preferencias ?? {},
+          requisitos: data?.requisitos ?? [],
+          roteirosSalvos: data?.roteirosSalvos ?? [],
+        });
       }
     } catch (error) {
       console.error("Erro ao buscar dados do usuário:", error);
@@ -57,7 +81,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       setUser(user);
       if (user) {
-        await fetchUserData(user.uid);
+        await fetchUserData(user.uid, user);
       } else {
         setUserData(null);
       }

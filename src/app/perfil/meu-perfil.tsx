@@ -8,6 +8,7 @@ import {
   TouchableOpacity,
   View,
   ActivityIndicator,
+  Image,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Colors } from '../../constants/Colors';
@@ -58,7 +59,11 @@ export default function MeuPerfilScreen() {
         {/* Avatar */}
         <View style={styles.avatarWrapper}>
           <View style={styles.avatar}>
-            <MaterialIcons name="person" size={r.scaleX(56)} color={Colors.textWhite} />
+            {userData?.avatarUrl ? (
+              <Image source={{ uri: userData.avatarUrl }} style={styles.avatarImage} />
+            ) : (
+              <MaterialIcons name="person" size={r.scaleX(56)} color={Colors.textWhite} />
+            )}
           </View>
         </View>
 
@@ -121,7 +126,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     borderWidth: 2,
     borderColor: Colors.primary,
+    overflow: 'hidden',
   },
+  avatarImage: { width: '100%', height: '100%' },
   name: { color: Colors.textWhite, fontWeight: '700', marginBottom: 12 },
   editBtn: {
     flexDirection: 'row',

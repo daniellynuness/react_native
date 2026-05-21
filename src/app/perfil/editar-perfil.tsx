@@ -4,6 +4,7 @@ import React, { useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Image,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
@@ -14,11 +15,32 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { doc, updateDoc } from 'firebase/firestore';
+import { updateProfile } from 'firebase/auth';
+import * as ImagePicker from 'expo-image-picker';
 import { Colors } from '../../constants/Colors';
 import { useAuth } from '../../context/AuthContext';
 import { db, isFirebaseConfigured } from '../../services/firebase';
+import { salvarPerfilUsuario } from '../../services/usuarios';
 import { useResponsive } from '../../utils/responsive';
+
+function onlyDigits(value: string) {
+  return value.replace(/\D/g, '');
+}
+
+function formatPhone(value: string) {
+  const digits = onlyDigits(value).slice(0, 11);
+  if (digits.length <= 2) return digits;
+  if (digits.length <= 6) return `(${digits.slice(0, 2)}) ${digits.slice(2)}`;
+  if (digits.length <= 10) return `(${digits.slice(0, 2)}) ${digits.slice(2, 6)}-${digits.slice(6)}`;
+  return `(${digits.slice(0, 2)}) ${digits.slice(2, 7)}-${digits.slice(7)}`;
+}
+
+function formatBirthDate(value: string) {
+  const digits = onlyDigits(value).slice(0, 8);
+  if (digits.length <= 2) return digits;
+  if (digits.length <= 4) return `${digits.slice(0, 2)}/${digits.slice(2)}`;
+  return `${digits.slice(0, 2)}/${digits.slice(2, 4)}/${digits.slice(4)}`;
+}
 
 function Field({ label, value, onChangeText, placeholder, keyboardType }: {
   label: string;
@@ -50,9 +72,35 @@ export default function EditarPerfilScreen() {
   const { user, userData, refreshUserData } = useAuth();
 
   const [nome, setNome] = useState(userData?.nome ?? '');
-  const [telefone, setTelefone] = useState(userData?.telefone ?? '');
-  const [dataNascimento, setDataNascimento] = useState(userData?.dataNascimento ?? '');
+  const [telefone, setTelefone] = useState(formatPhone(userData?.telefone ?? ''));
+  const [dataNascimento, setDataNascimento] = useState(formatBirthDate(userData?.dataNascimento ?? ''));
+  const [avatarUrl, setAvatarUrl] = useState(userData?.avatarUrl ?? '');
   const [salvando, setSalvando] = useState(false);
+
+  async function handleSelecionarFoto() {
+    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permission.granted) {
+      Alert.alert('Permissão necessária', 'Permita acesso às fotos para escolher uma imagem de perfil.');
+      return;
+    }
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.35,
+      base64: true,
+    });
+
+    if (result.canceled) return;
+    const asset = result.assets[0];
+    if (!asset.base64) {
+      Alert.alert('Erro', 'Não foi possível carregar a imagem selecionada.');
+      return;
+    }
+
+    setAvatarUrl(`data:${asset.mimeType ?? 'image/jpeg'};base64,${asset.base64}`);
+  }
 
   async function handleSalvar() {
     const nomeTrim = nome.trim();
@@ -70,12 +118,13 @@ export default function EditarPerfilScreen() {
 
     setSalvando(true);
     try {
-      await updateDoc(doc(db, 'usuarios', user.uid), {
+      await salvarPerfilUsuario(user.uid, {
         nome: nomeTrim,
-        ...(telefone.trim() && { telefone: telefone.trim() }),
-        ...(dataNascimento.trim() && { dataNascimento: dataNascimento.trim() }),
-        updatedAt: new Date().toISOString(),
+        telefone: telefone.trim(),
+        dataNascimento: dataNascimento.trim(),
+        avatarUrl,
       });
+      await updateProfile(user, { displayName: nomeTrim });
       await refreshUserData();
       router.back();
     } catch (error: any) {
@@ -103,9 +152,13 @@ export default function EditarPerfilScreen() {
         >
           <View style={styles.avatarWrapper}>
             <View style={styles.avatar}>
-              <MaterialIcons name="person" size={r.scaleX(56)} color={Colors.textWhite} />
+              {avatarUrl ? (
+                <Image source={{ uri: avatarUrl }} style={styles.avatarImage} />
+              ) : (
+                <MaterialIcons name="person" size={r.scaleX(56)} color={Colors.textWhite} />
+              )}
             </View>
-            <TouchableOpacity style={styles.avatarEditBtn} activeOpacity={0.8}>
+            <TouchableOpacity style={styles.avatarEditBtn} activeOpacity={0.8} onPress={handleSelecionarFoto}>
               <MaterialIcons name="camera-alt" size={16} color={Colors.textWhite} />
             </TouchableOpacity>
           </View>
@@ -117,8 +170,20 @@ export default function EditarPerfilScreen() {
             onChangeText={() => {}}
             keyboardType="email-address"
           />
-          <Field label="Telefone" value={telefone} onChangeText={setTelefone} placeholder="(xx) xxxxx-xxxx" keyboardType="phone-pad" />
-          <Field label="Data de Nascimento" value={dataNascimento} onChangeText={setDataNascimento} placeholder="DD/MM/AAAA" />
+          <Field
+            label="Telefone"
+            value={telefone}
+            onChangeText={(value) => setTelefone(formatPhone(value))}
+            placeholder="(xx) xxxxx-xxxx"
+            keyboardType="phone-pad"
+          />
+          <Field
+            label="Data de Nascimento"
+            value={dataNascimento}
+            onChangeText={(value) => setDataNascimento(formatBirthDate(value))}
+            placeholder="DD/MM/AAAA"
+            keyboardType="phone-pad"
+          />
 
           <TouchableOpacity
             style={[styles.saveBtn, { marginTop: r.scaleY(12) }, salvando && { opacity: 0.6 }]}
@@ -159,7 +224,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     borderWidth: 2,
     borderColor: Colors.primary,
+    overflow: 'hidden',
   },
+  avatarImage: { width: '100%', height: '100%' },
   avatarEditBtn: {
     position: 'absolute',
     bottom: 2,

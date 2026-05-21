@@ -20,6 +20,7 @@ export default function RootLayout() {
         <Stack.Screen name="verificacao" />
         <Stack.Screen name="home" />
         <Stack.Screen name="roteiros" />
+        <Stack.Screen name="roteiro-detalhes" />
         <Stack.Screen name="mapa" />
         <Stack.Screen name="criar-roteiro" />
         <Stack.Screen name="detalhes-cidade" />

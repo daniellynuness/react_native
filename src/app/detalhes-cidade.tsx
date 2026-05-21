@@ -15,6 +15,9 @@ import StarRating from '../components/ui/StarRating';
 import { Colors } from '../constants/Colors';
 import { avaliacoesComunidade } from '../data/mockAvaliacoes';
 import { cidadesRecomendadas, ultimasVisualizadas, Cidade } from '../data/mockCidades';
+import { useAuth } from '../context/AuthContext';
+import { auth, db, isFirebaseConfigured } from '../services/firebase';
+import { adicionarCidadeAoRoteiroAutomatico } from '../services/roteiros';
 import { useResponsive } from '../utils/responsive';
 
 // Mock extra city details
@@ -32,6 +35,7 @@ export default function DetalhesCidadeScreen() {
   const r = useResponsive();
   const insets = useSafeAreaInsets();
   const params = useLocalSearchParams<{ id?: string }>();
+  const { user } = useAuth();
 
   const cidade: Cidade | undefined =
     cidadesRecomendadas.find((c) => c.id === params.id) ??
@@ -39,6 +43,7 @@ export default function DetalhesCidadeScreen() {
 
   const [showReviews, setShowReviews] = useState(false);
   const [favoritado, setFavoritado] = useState(false);
+  const [adicionandoRoteiro, setAdicionandoRoteiro] = useState(false);
 
   if (!cidade) {
     return (
@@ -62,6 +67,7 @@ export default function DetalhesCidadeScreen() {
   }
 
   const det = detalhesExtra.default;
+  const cidadeAtual = cidade;
 
   function handleFavoritar() {
     setFavoritado((v) => !v);
@@ -76,11 +82,22 @@ export default function DetalhesCidadeScreen() {
     Alert.alert('Avaliar', 'Avaliação simulada no modo desenvolvimento.');
   }
 
-  function handleAdicionarRoteiro() {
-    // DEV_FALLBACK: remove after Firebase integration is complete.
-    // Plugar: updateDoc(roteiros/{roteiroId}, { cidades: arrayUnion(cidade.id) })
-    // ou abrir seletor de roteiro do usuario.
-    Alert.alert('Roteiro', 'Cidade adicionada ao roteiro no modo desenvolvimento.');
+  async function handleAdicionarRoteiro() {
+    if (!isFirebaseConfigured || !auth || !db || !user) {
+      Alert.alert('Firebase necessário', 'Faça login com Firebase configurado para salvar cidades em roteiros.');
+      return;
+    }
+
+    setAdicionandoRoteiro(true);
+    try {
+      const nomeRoteiro = await adicionarCidadeAoRoteiroAutomatico(user.uid, cidadeAtual);
+      Alert.alert('Roteiro atualizado', `${cidadeAtual.nome} foi adicionada ao ${nomeRoteiro}.`);
+    } catch (error) {
+      console.error('[detalhes-cidade:roteiro]', error);
+      Alert.alert('Erro', 'Não foi possível adicionar a cidade ao roteiro. Tente novamente.');
+    } finally {
+      setAdicionandoRoteiro(false);
+    }
   }
 
   return (
@@ -142,7 +159,13 @@ export default function DetalhesCidadeScreen() {
               r={r}
             />
             <ActionButton icon="star-rate" label="Avaliar" onPress={handleAvaliar} r={r} />
-            <ActionButton icon="playlist-add" label="Roteiro" onPress={handleAdicionarRoteiro} r={r} />
+            <ActionButton
+              icon="playlist-add"
+              label={adicionandoRoteiro ? 'Salvando' : 'Roteiro'}
+              onPress={handleAdicionarRoteiro}
+              r={r}
+              disabled={adicionandoRoteiro}
+            />
           </View>
 
           {!showReviews ? (
@@ -199,14 +222,16 @@ function ActionButton({
   label,
   onPress,
   r,
+  disabled,
 }: {
   icon: keyof typeof MaterialIcons.glyphMap;
   label: string;
   onPress: () => void;
   r: ReturnType<typeof import('../utils/responsive').useResponsive>;
+  disabled?: boolean;
 }) {
   return (
-    <TouchableOpacity style={actionStyles.btn} onPress={onPress} activeOpacity={0.85}>
+    <TouchableOpacity style={[actionStyles.btn, disabled && { opacity: 0.6 }]} onPress={onPress} activeOpacity={0.85} disabled={disabled}>
       <MaterialIcons name={icon} size={20} color="#FFFFFF" />
       <Text style={[actionStyles.label, { fontSize: r.font(13) }]}>{label}</Text>
     </TouchableOpacity>

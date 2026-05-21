@@ -9,6 +9,8 @@ export type Roteiro = {
   privado: boolean;
   favoritado: boolean;
   imagemUrl?: string;
+  autorNome?: string;
+  descricao?: string;
 };
 
 export const roteirosFavoritos: Roteiro[] = [
@@ -66,14 +68,16 @@ export const roteirosRecomendados: Roteiro[] = [
   {
     id: '5',
     nome: 'Para aproveitar o frio',
-    cidades: ['Gramado', 'Canela', 'Serra Gaúcha'],
-    distanciaKm: 200,
+    cidades: ['Gramado, RS', 'Canela, RS', 'Bento Gonçalves, RS', 'Campos do Jordão, SP', 'Curitiba, PR'],
+    distanciaKm: 980,
     duracao: '5-10 dias',
     tipo: 'Inverno',
     cor: '#6366F1',
     privado: false,
     favoritado: false,
     imagemUrl: 'https://picsum.photos/seed/frio/120/120',
+    autorNome: 'Marina Alves',
+    descricao: 'Roteiro compartilhado pela comunidade com cidades frias, serra, gastronomia e passeios urbanos.',
   },
   {
     id: '6',
